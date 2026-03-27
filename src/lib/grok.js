@@ -1,52 +1,53 @@
 import { secToMMSS } from './strava'
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+const GROQ_API_KEY = import.meta.env.VITE_GROK_API_KEY
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-async function geminiRequest(systemPrompt, userMessage, jsonMode = false) {
+async function groqRequest(systemPrompt, userMessage, jsonMode = false) {
   const body = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-    generationConfig: {
-      temperature: 0.3,
-      maxOutputTokens: jsonMode ? 16000 : 1500,
-      ...(jsonMode && { responseMimeType: 'application/json' })
-    }
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ],
+    temperature: 0.3,
+    max_tokens: jsonMode ? 8000 : 1500,
+    ...(jsonMode && { response_format: { type: 'json_object' } })
   }
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch(GROQ_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
     body: JSON.stringify(body)
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error?.message || `Erreur Gemini ${res.status}`)
+    throw new Error(err.error?.message || `Erreur Groq ${res.status}`)
   }
   const data = await res.json()
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  return data.choices[0].message.content
 }
 
-async function geminiChat(messages, systemPrompt) {
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }))
+async function groqChat(messages, systemPrompt) {
   const body = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents,
-    generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages.map(m => ({ role: m.role, content: m.content }))
+    ],
+    temperature: 0.5,
+    max_tokens: 1500
   }
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch(GROQ_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
     body: JSON.stringify(body)
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error?.message || `Erreur Gemini ${res.status}`)
+    throw new Error(err.error?.message || `Erreur Groq ${res.status}`)
   }
   const data = await res.json()
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  return data.choices[0].message.content
 }
 
 function buildPaceContext(stravaStats) {
@@ -86,7 +87,7 @@ RÈGLES ABSOLUES:
 3. 75% du volume en zone 2 (endurance fondamentale)
 4. Cycle 3 semaines charge + 1 semaine récupération (-20%)
 5. Allures TOUJOURS en MM:SS/km - JAMAIS de décimales
-6. Pour trail: séances spécifiques montée/descente technique, bâtons si ultra
+6. Pour trail: séances spécifiques montée/descente technique
 7. Séances variées: EF, fractionné, seuil, côtes, sortie longue, récup active
 8. Retourner du JSON pur valide uniquement, aucun texte autour`
 
@@ -101,7 +102,7 @@ ${paceCtx}
 VOLUMES OBLIGATOIRES:
 S1: ${vStart}km → montée progressive → pic: ${vPeak}km → affûtage: ${vTaper}km → J-7: ${vPreRace}km
 
-JSON PUR:
+JSON:
 {
   "plan_name": "string",
   "total_weeks": ${weeksTotal},
@@ -141,7 +142,7 @@ JSON PUR:
   "race_day_plan": "plan course détaillé avec allures MM:SS par section"
 }`
 
-  const text = await geminiRequest(system, user, true)
+  const text = await groqRequest(system, user, true)
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   const parsed = JSON.parse(cleaned)
   if (!parsed.weeks?.length) throw new Error('Programme invalide — réessaie')
@@ -159,7 +160,7 @@ RÉALISÉ: ${(stravaActivity.distance/1000).toFixed(2)}km · ${Math.round(strava
 JSON: {"verdict":"VALIDÉE","verdict_color":"#00b894","quality_score":4,"quality_label":"Très bien","compliance_pct":92,"pace_analysis":"string","heart_rate_analysis":"string","positives":["string"],"improvements":["string"],"coach_comment":"string","recovery_advice":"string","next_session_adjustment":"string"}
 Verdicts possibles: VALIDÉE (#00b894), TROP RAPIDE (#e53e3e), TROP LENTE (#0066ff), INCOMPLÈTE (#d97706), DÉPASSÉE (#8b5cf6)`
 
-  const text = await geminiRequest(system, user, true)
+  const text = await groqRequest(system, user, true)
   return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
 }
 
@@ -174,7 +175,7 @@ export async function getTodayInsight(todaySession, recentActivities, weekProgre
     const user = `Séance: ${todaySession.title} (${todaySession.type}, ${todaySession.distance_km}km, allure: ${todaySession.target_pace})
 Récent: ${recent} | Semaine: ${weekProgress.completed}/${weekProgress.total} | J-${goal ? Math.ceil((new Date(goal.race_date)-new Date())/86400000) : '?'}
 JSON: {"message":"max 120 chars motivant et actionnable","type":"normal"}`
-    const text = await geminiRequest(system, user, true)
+    const text = await groqRequest(system, user, true)
     return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
   } catch { return null }
 }
@@ -199,7 +200,7 @@ export async function adaptWeek(currentWeek, completedSessions, missedSessions, 
   const user = `Semaine ${currentWeek?.week_number}: ${completedSessions.length} faites, manquées: ${missedSessions.map(s=>s.title).join(', ')||'aucune'}
 Fatigue: ${fatigue}/5 | ${buildPaceContext(stravaStats)}
 JSON: {"adaptation_needed":true,"reason":"string","adjustments":[{"session_title":"string","original_distance_km":10,"new_distance_km":8,"change_reason":"string"}],"coach_message":"string","weekly_volume_pct":-10}`
-  const text = await geminiRequest(system, user, true)
+  const text = await groqRequest(system, user, true)
   return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
 }
 
@@ -209,5 +210,5 @@ export async function chatWithCoach(messages, ctx) {
 Athlète: objectif="${ctx.goalName||'?'}", niveau="${ctx.level||'?'}", ${ctx.weeklyKm||0}km/sem, J-${ctx.daysUntilRace||'?'}${ctx.targetTime?', objectif: '+ctx.targetTime:''}.
 Allure EF réelle: ${efStr}. FC max: ${ctx.maxHR||'?'}bpm. Ce mois: ${ctx.monthKm||0}km, ${ctx.monthElevation||0}m D+.
 Réponds en français. Direct, motivant, précis. Allures en MM:SS/km uniquement. Max 4 paragraphes courts.`
-  return geminiChat(messages, system)
+  return groqChat(messages, system)
 }
