@@ -138,18 +138,31 @@ export function computeStats(activities) {
     time: yearRuns.reduce((s, a) => s + a.moving_time, 0)
   }
 
-  // Weekly trend 8 semaines avec dates claires
-  const MOIS_FR = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc']
+  // Weekly trend 8 semaines alignees lundi->dimanche
+  const MOIS_FR = ['jan','fev','mars','avr','mai','juin','juil','aout','sep','oct','nov','dec']
+  const MOIS_ACCENTS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc']
+  // Trouver le lundi de la semaine courante
+  const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1 // 0=lun, 6=dim
+  const currentMonday = new Date(now.getTime() - dayOfWeek * 86400000)
+  currentMonday.setHours(0,0,0,0)
+  
   const weeklyTrend = []
+  let prevMonth = null
   for (let i = 7; i >= 0; i--) {
-    const weekStart = new Date(now.getTime() - (i + 1) * 7 * 86400000)
-    const weekEnd = new Date(now.getTime() - i * 7 * 86400000)
+    const weekStart = new Date(currentMonday.getTime() - i * 7 * 86400000)
+    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000)
     const wr = runs.filter(a => { const d = new Date(a.start_date); return d >= weekStart && d < weekEnd })
-    const label = weekStart.getDate() + ' ' + MOIS_FR[weekStart.getMonth()]
-    const endLabel = weekEnd.getDate() + ' ' + MOIS_FR[weekEnd.getMonth()]
+    const isCurrentWeek = i === 0
+    const monthName = MOIS_ACCENTS[weekStart.getMonth()]
+    // Afficher le mois seulement si change
+    const showMonth = monthName !== prevMonth
+    const label = isCurrentWeek ? 'Cette sem.' : (showMonth ? monthName : '')
+    const startStr = weekStart.getDate() + ' ' + monthName
+    const endStr = (weekEnd.getDate()-1) + ' ' + MOIS_ACCENTS[new Date(weekEnd.getTime()-86400000).getMonth()]
+    prevMonth = monthName
     weeklyTrend.push({
       week: label,
-      weekFull: label + ' - ' + endLabel,
+      weekFull: isCurrentWeek ? 'Semaine en cours' : startStr + ' - ' + endStr,
       km: Math.round(wr.reduce((s, a) => s + a.distance, 0) / 100) / 10,
       elevation: Math.round(wr.reduce((s, a) => s + (a.total_elevation_gain || 0), 0)),
       runs: wr.length
