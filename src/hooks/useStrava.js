@@ -23,7 +23,12 @@ export function useStrava() {
         const refreshed = await refreshToken(tokens.refresh_token)
         tokens = { ...tokens, ...refreshed }
         store(tokens)
-        if (user) await supabase.from('strava_tokens').upsert({ user_id: user.id, access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: tokens.expires_at })
+        if (user) await supabase.from('strava_tokens').upsert({
+          user_id: user.id,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: tokens.expires_at
+        })
       } catch { localStorage.removeItem(KEY); return null }
     }
     return tokens.access_token
@@ -34,7 +39,10 @@ export function useStrava() {
     try {
       const token = await getValidToken()
       if (!token) { setLoading(false); return }
-      const [athlete, activities] = await Promise.all([getAthlete(token), getActivities(token, 1, 100)])
+      const [athlete, activities] = await Promise.all([
+        getAthlete(token),
+        getActivities(token, 1, 100)
+      ])
       setStravaData({ athlete, activities })
       setStats(computeStats(activities))
       setConnected(true)
@@ -47,7 +55,11 @@ export function useStrava() {
     const init = async () => {
       let tokens = getStored()
       if (!tokens && user) {
-        const { data } = await supabase.from('strava_tokens').select('*').eq('user_id', user.id).single()
+        const { data } = await supabase
+          .from('strava_tokens')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle()
         if (data) { tokens = data; store(data) }
       }
       if (tokens?.access_token) { setConnected(true); fetchData() }
@@ -57,7 +69,13 @@ export function useStrava() {
 
   const saveTokens = useCallback(async (tokenData) => {
     store(tokenData)
-    if (user) await supabase.from('strava_tokens').upsert({ user_id: user.id, access_token: tokenData.access_token, refresh_token: tokenData.refresh_token, expires_at: tokenData.expires_at, athlete_id: tokenData.athlete?.id })
+    if (user) await supabase.from('strava_tokens').upsert({
+      user_id: user.id,
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: tokenData.expires_at,
+      athlete_id: tokenData.athlete?.id
+    })
     setConnected(true)
     fetchData()
   }, [user, fetchData])
