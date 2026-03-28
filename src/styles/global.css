@@ -145,7 +145,7 @@ body { font-family: var(--font-body); background: var(--bg); color: var(--text);
   /* Contenu principal */
   .main-content { margin-left: 0 !important; overflow-x: hidden !important; }
   .main-inner {
-    padding: calc(env(safe-area-inset-top) + 16px) 14px calc(env(safe-area-inset-bottom) + 80px) !important;
+    padding: calc(env(safe-area-inset-top) + 70px) 14px calc(env(safe-area-inset-bottom) + 80px) !important;
   }
 
   .card { padding: 14px !important; }
