@@ -3,9 +3,14 @@ import { secToMMSS } from './strava'
 const GROQ_API_KEY = import.meta.env.VITE_GROK_API_KEY
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-async function groqRequest(messages, maxTokens = 1500, jsonMode = false) {
+// Modèle puissant pour la génération de programme
+const MODEL_FULL = 'llama-3.3-70b-versatile'
+// Modèle rapide (moins de tokens) pour l'analyse de séance et insights
+const MODEL_FAST = 'llama-3.1-8b-instant'
+
+async function groqRequest(messages, maxTokens = 1500, jsonMode = false, fast = false) {
   const body = {
-    model: 'llama-3.3-70b-versatile',
+    model: fast ? MODEL_FAST : MODEL_FULL,
     messages,
     temperature: 0.25,
     max_tokens: maxTokens,
@@ -45,57 +50,50 @@ export function computeAthleteProfile(stravaStats) {
     vo2max = Math.max(25, Math.min(90, Math.round(-4.6 + 0.182258 * spd + 0.000104 * spd * spd)))
   }
   const paces = bestPaceSecPerKm ? {
-    ef:     efPaceSecPerKm || Math.round(bestPaceSecPerKm * 1.35),
-    tempo:  Math.round(bestPaceSecPerKm * 1.15),
-    seuil:  Math.round(bestPaceSecPerKm * 1.08),
-    vma:    vmaSecPerKm,
-    recup:  Math.round(bestPaceSecPerKm * 1.55)
+    ef:    efPaceSecPerKm || Math.round(bestPaceSecPerKm * 1.35),
+    tempo: Math.round(bestPaceSecPerKm * 1.15),
+    seuil: Math.round(bestPaceSecPerKm * 1.08),
+    vma:   vmaSecPerKm,
+    recup: Math.round(bestPaceSecPerKm * 1.55)
   } : null
   return { maxHR, avgHR, fcRepos, zones, vmaKmh, vo2max, paces, avgWeeklyKm: Math.round(avgWeeklyKm || 0) }
 }
 
-// ── Vérification faisabilité de l'objectif ──
+// ── Vérification faisabilité objectif ──
 export function checkGoalFeasibility(goal, profile) {
-  if (!goal.target_time || !profile) return { feasible: true, message: null }
-  
-  // Convertir objectif temps en secondes
-  const timeStr = goal.target_time
-  let targetSec = null
-  const hMatch = timeStr.match(/(\d+)h(\d+)/i)
-  const mMatch = timeStr.match(/^(\d+)min/i)
-  if (hMatch) targetSec = parseInt(hMatch[1]) * 3600 + parseInt(hMatch[2]) * 60
-  else if (mMatch) targetSec = parseInt(mMatch[1]) * 60
-  
-  if (!targetSec || !profile.paces) return { feasible: true, message: null }
-
-  // Allure cible de la course
-  const targetPaceSecPerKm = targetSec / goal.distance_km
-  // Allure minimale réaliste = allure EF de l'athlète (si plus lent que EF → impossible)
-  const efPace = profile.paces.ef
-  // Allure maximale réaliste = meilleure allure sur 5km (si plus rapide → surhumain)
-  const bestPace = profile.paces.vma ? Math.round(profile.paces.vma * 1.15) : null
-
-  if (targetPaceSecPerKm < (bestPace || 0) * 0.9) {
-    return {
-      feasible: false,
-      message: `L'objectif ${goal.target_time} est irréaliste — il faudrait courir à ${secToMMSS(targetPaceSecPerKm)}/km, bien au-delà de tes capacités actuelles (meilleure allure: ${secToMMSS(profile.paces.vma)}/km VMA). Objectif suggéré: finisher ou ${secToMMSS(Math.round(efPace * 0.9))}/km.`
-    }
-  }
-
-  // Vérifier si assez de temps pour préparer
   const today = new Date()
   const raceDate = new Date(goal.race_date)
   const weeksLeft = Math.ceil((raceDate - today) / (7 * 86400000))
+
   if (weeksLeft < 3) {
+    return { feasible: false, message: `Seulement ${weeksLeft} semaine(s) avant la course — il faut minimum 3 semaines pour générer un programme efficace.` }
+  }
+
+  if (!goal.target_time || !profile?.paces) return { feasible: true, message: null }
+
+  const timeStr = goal.target_time
+  let targetSec = null
+  const hMatch = timeStr.match(/(\d+)h(\d+)/i)
+  const mMatch = timeStr.match(/^(\d+)[\s]?min/i)
+  if (hMatch) targetSec = parseInt(hMatch[1]) * 3600 + parseInt(hMatch[2]) * 60
+  else if (mMatch) targetSec = parseInt(mMatch[1]) * 60
+
+  if (!targetSec) return { feasible: true, message: null }
+
+  const targetPaceSecPerKm = targetSec / goal.distance_km
+  const minRealisticPace = profile.paces.vma ? Math.round(profile.paces.vma * 1.05) : null
+
+  if (minRealisticPace && targetPaceSecPerKm < minRealisticPace) {
     return {
       feasible: false,
-      message: `Seulement ${weeksLeft} semaine(s) avant la course — pas assez de temps pour générer un programme d'entraînement efficace. Il faut minimum 3 semaines.`
+      message: `L'objectif "${goal.target_time}" nécessite de courir à ${secToMMSS(targetPaceSecPerKm)}/km, ce qui dépasse tes capacités actuelles (VMA estimée: ${profile.vmaKmh} km/h). Essaie un objectif plus progressif ou sélectionne "Finisher".`
     }
   }
 
   return { feasible: true, message: null }
 }
 
+// ── Génération du programme ──
 export async function generateTrainingPlan(goal, stravaStats) {
   const today = new Date()
   const raceDate = new Date(goal.race_date)
@@ -103,7 +101,6 @@ export async function generateTrainingPlan(goal, stravaStats) {
 
   const profile = computeAthleteProfile(stravaStats)
 
-  // Vérifier faisabilité
   const feasibility = checkGoalFeasibility(goal, profile)
   if (!feasibility.feasible) throw new Error(feasibility.message)
 
@@ -118,13 +115,11 @@ export async function generateTrainingPlan(goal, stravaStats) {
   const isTrail = goal.race_type === 'trail' || goal.race_type === 'ultra'
   const isUltra = goal.race_type === 'ultra' || goal.distance_km > 60
 
-  // Zones FC en texte
   const z2str = profile?.zones ? `${profile.zones.z2.min}-${profile.zones.z2.max} bpm` : '65-75% FCmax'
   const z3str = profile?.zones ? `${profile.zones.z3.min}-${profile.zones.z3.max} bpm` : '72-82% FCmax'
   const z4str = profile?.zones ? `${profile.zones.z4.min}-${profile.zones.z4.max} bpm` : '82-90% FCmax'
   const z5str = profile?.zones ? `${profile.zones.z5.min}-${profile?.maxHR} bpm` : '90-100% FCmax'
 
-  // Allures en texte
   const efStr    = profile?.paces?.ef    ? secToMMSS(profile.paces.ef)    + '/km' : 'allure très facile'
   const tempoStr = profile?.paces?.tempo ? secToMMSS(profile.paces.tempo) + '/km' : 'allure marathon'
   const seuilStr = profile?.paces?.seuil ? secToMMSS(profile.paces.seuil) + '/km' : 'allure semi-marathon'
@@ -138,60 +133,46 @@ export async function generateTrainingPlan(goal, stravaStats) {
 
 RÈGLES STRICTES SUR LES TYPES DE SÉANCES — NE JAMAIS VIOLER:
 
-1. ENDURANCE FONDAMENTALE (EF):
-   - C'est un footing CONTINU sans interruption
+1. ENDURANCE FONDAMENTALE (EF) = footing CONTINU sans interruption
    - Zone Z2 (${z2str}), allure ${efStr}
-   - PAS d'intervalles, PAS de répétitions avec pauses, PAS de fractionné
-   - Description: "X min de footing continu à ${efStr}, FC maintenue entre ${z2str}"
-   - En trail: marche autorisée dans les montées pour rester en Z2, mais pas de pause
+   - PAS d'intervalles, PAS de répétitions avec pauses
+   - En trail: marche autorisée dans les montées UNIQUEMENT pour rester en Z2
 
-2. FRACTIONNÉ / VMA (Z5):
-   - Ce sont des répétitions COURTES et INTENSES avec récupération
-   - Exemple correct: "8 × 400m à ${vmaStr} récup 90sec trot ${recupStr}"
-   - Zone Z5 (${z5str})
+2. FRACTIONNÉ / VMA = répétitions COURTES et INTENSES avec récupération
+   - Zone Z5 (${z5str}), allure ${vmaStr}
+   - Format: "8 × 400m à ${vmaStr} récup 90sec trot"
+   - Récup entre répétitions: trot à ${recupStr}
 
-3. SEUIL / TEMPO (Z4):
-   - Efforts SOUTENUS de 5-20 min SANS PAUSE (ou avec très courte récup)
-   - Exemple correct: "3 × 8 min à ${seuilStr} récup 3 min trot" ou "25 min continu à ${seuilStr}"
-   - Zone Z4 (${z4str})
+3. SEUIL / TEMPO = efforts SOUTENUS de 5-20 min
+   - Zone Z4 (${z4str}), allure ${seuilStr}
+   - Format: "3 × 8 min à ${seuilStr} récup 3 min trot" ou "25 min continu"
 
-4. SORTIE LONGUE:
-   - Footing LONG et CONTINU en Z2
-   - Terrain varié si trail, marche active autorisée en montée
-   - Pas de fractionné intégré
+4. SORTIE LONGUE = footing LONG et CONTINU en Z2
+   - Allure ${efStr}, terrain varié si trail
 
-5. CÔTES (trail uniquement):
-   - Montées en effort + descente en récupération
-   - Exemple: "6 × 3 min en montée à ${z4str} récup descente lente"
+5. CÔTES (trail uniquement) = montées effort + descente récupération
+   - "6 × 3 min montée à ${z4str} récup descente"
 
 RÈGLES DE STRUCTURE:
-- EXACTEMENT ${nbSessions} séances par semaine sur les jours 0=Lun, 1=Mar, 2=Mer, 3=Jeu, 4=Ven, 5=Sam, 6=Dim
-- Les jours choisis sont: ${days.join(', ')}
+- EXACTEMENT ${nbSessions} séances par semaine
+- Jours choisis: ${days.join(', ')} (0=Lun, 1=Mar, 2=Mer, 3=Jeu, 4=Ven, 5=Sam, 6=Dim)
 - JAMAIS 2 séances qualité (Z4-Z5) consécutives
-- 80% du volume en Z1-Z2 (EF + sortie longue)
-- Maximum 1 séance fractionné Z5 par semaine
-- Semaine de décharge toutes les 3-4 semaines (-30% volume)
-- JSON pur valide UNIQUEMENT`
+- 80% volume en Z1-Z2
+- Max 1 séance Z5 par semaine
+- Semaine de décharge toutes les 3-4 semaines (-30%)
+- JSON pur UNIQUEMENT`
 
-  const user = `Programme pour: ${goal.race_type} ${goal.distance_km}km D+${goal.elevation_gain || 0}m
-Date: ${goal.race_date} | ${weeksTotal} semaines | Niveau: ${goal.level}
-Objectif: ${goal.target_time || 'Finisher'}
-${nbSessions} séances/semaine sur jours: ${days.join(', ')} (0=Lun, 6=Dim)
+  const user = `Programme: ${goal.race_type} ${goal.distance_km}km D+${goal.elevation_gain || 0}m
+${weeksTotal} semaines | Niveau: ${goal.level} | Objectif: ${goal.target_time || 'Finisher'}
+${nbSessions} séances/sem sur jours: [${days.join(', ')}]
 ${isUltra ? 'ULTRA: rando-courses longues, marche active systématique' : ''}
 
-DONNÉES ATHLÈTE DEPUIS STRAVA:
-- Volume actuel: ${profile?.avgWeeklyKm || '?'} km/sem
-- VMA estimée: ${profile?.vmaKmh || '?'} km/h
-- VO2max: ~${profile?.vo2max || '?'} ml/kg/min
-- Allure EF réelle (Z2): ${efStr} ← utiliser pour TOUTES les séances faciles
-- Allure Tempo (Z3): ${tempoStr}
-- Allure Seuil (Z4): ${seuilStr}
-- Allure VMA (Z5): ${vmaStr}
-- Récup inter-fractio: ${recupStr}
-- FC max: ${profile?.maxHR || '?'} bpm
+PROFIL ATHLÈTE (Strava):
+Volume: ${profile?.avgWeeklyKm || '?'} km/sem | VMA: ${profile?.vmaKmh || '?'} km/h | VO2max: ~${profile?.vo2max || '?'}
+EF: ${efStr} | Tempo: ${tempoStr} | Seuil: ${seuilStr} | VMA: ${vmaStr} | Récup: ${recupStr}
+FC max: ${profile?.maxHR || '?'} bpm
 
-VOLUMES:
-Sem 1: ${vStart}km → pic: ${vPeak}km → affûtage: ${vTaper}km → J-7: ${vPreRace}km
+Volumes: S1=${vStart}km → pic=${vPeak}km → affûtage=${vTaper}km → J-7=${vPreRace}km
 
 JSON:
 {
@@ -212,43 +193,41 @@ JSON:
     "phase": "Base aérobie",
     "total_km": ${vStart},
     "total_elevation": 0,
-    "focus": "string court",
+    "focus": "string",
     "coach_tip": "conseil motivant",
     "load": "légère",
     "is_recovery_week": false,
-    "sessions": [
-      {
-        "day_of_week": ${days[0]},
-        "type": "Endurance fondamentale",
-        "title": "Footing EF",
-        "duration_min": 45,
-        "distance_km": 7,
-        "elevation_m": 0,
-        "intensity": "facile",
-        "heart_rate_zone": "Z2 — ${z2str} — EF",
-        "target_pace": "${efStr}",
-        "warmup": "Pas d'échauffement nécessaire, démarrer directement lentement",
-        "main_set": "45 min de footing CONTINU à ${efStr}, FC maintenue entre ${z2str}. Aucune pause, aucun intervalle. Terrain plat ou légèrement vallonné. Si FC dépasse ${z2str.split('-')[1].replace(' bpm','')} bpm, ralentir immédiatement. Le test: pouvoir tenir une conversation complète sans hacher les mots.",
-        "cooldown": "5 min de marche légère",
-        "nutrition_tip": "",
-        "description": "Développer la base aérobie par footing continu en zone 2",
-        "tips": "Résister à l'envie d'aller plus vite. L'EF doit rester confortable du début à la fin.",
-        "equipment": "Chaussures running, montre GPS",
-        "completed": false,
-        "quality": null,
-        "strava_activity": null,
-        "analysis": null
-      }
-    ]
+    "sessions": [{
+      "day_of_week": ${days[0]},
+      "type": "Endurance fondamentale",
+      "title": "Footing EF",
+      "duration_min": 45,
+      "distance_km": 7,
+      "elevation_m": 0,
+      "intensity": "facile",
+      "heart_rate_zone": "Z2 — ${z2str} — EF",
+      "target_pace": "${efStr}",
+      "warmup": "Partir directement lentement, pas d'échauffement nécessaire",
+      "main_set": "45 min de footing CONTINU à ${efStr}, FC entre ${z2str}. Aucune pause. Test de la parole: tu dois pouvoir parler en phrases complètes.",
+      "cooldown": "5 min de marche",
+      "nutrition_tip": "",
+      "description": "Développer la base aérobie",
+      "tips": "Résister à l'envie d'accélérer. Rester en Z2 du début à la fin.",
+      "equipment": "Chaussures running, montre GPS",
+      "completed": false,
+      "quality": null,
+      "strava_activity": null,
+      "analysis": null
+    }]
   }],
   "race_day_plan": "string avec allures et stratégie"
 }
 
-IMPORTANT: Génère EXACTEMENT ${nbSessions} sessions par semaine sur les jours [${days.join(', ')}]. Respecte strictement les types de séances décrits dans les règles.`
+IMPORTANT: Génère EXACTEMENT ${nbSessions} sessions/semaine sur les jours [${days.join(', ')}].`
 
   const text = await groqRequest(
     [{ role: 'system', content: system }, { role: 'user', content: user }],
-    9000, true
+    9000, true, false
   )
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
   const parsed = JSON.parse(cleaned)
@@ -256,23 +235,27 @@ IMPORTANT: Génère EXACTEMENT ${nbSessions} sessions par semaine sur les jours 
   return parsed
 }
 
+// ── Analyse post-séance (modèle RAPIDE = moins de tokens) ──
 export async function analyzeSession(plannedSession, stravaActivity) {
   const paceSec = stravaActivity.average_speed ? Math.round(1000 / stravaActivity.average_speed) : null
   const paceStr = paceSec ? secToMMSS(paceSec) + '/km' : 'N/A'
+
   const system = `Coach running expert. Analyse la séance avec précision. JSON uniquement.`
-  const user = `PRÉVU: ${plannedSession.title} — ${plannedSession.main_set}
+  const user = `PRÉVU: ${plannedSession.title} — ${plannedSession.main_set?.slice(0, 200)}
 Distance: ${plannedSession.distance_km}km · Durée: ${plannedSession.duration_min}min · Zone: ${plannedSession.heart_rate_zone} · Allure: ${plannedSession.target_pace}
 RÉALISÉ: ${(stravaActivity.distance/1000).toFixed(2)}km · ${Math.round(stravaActivity.moving_time/60)}min · ${paceStr} · FC: ${stravaActivity.average_heartrate||'N/A'}bpm · D+${Math.round(stravaActivity.total_elevation_gain||0)}m
-JSON: {"verdict":"VALIDÉE","verdict_color":"#00b894","quality_score":4,"quality_label":"Très bien","compliance_pct":92,"pace_analysis":"string MM:SS/km","heart_rate_analysis":"string bpm","positives":["string"],"improvements":["string"],"coach_comment":"string","recovery_advice":"string","next_session_adjustment":"string"}
-Verdicts: VALIDÉE(#00b894), TROP RAPIDE(#e53e3e), TROP LENTE(#0066ff), INCOMPLÈTE(#d97706), DÉPASSÉE(#8b5cf6), FC TROP HAUTE(#e53e3e)`
+JSON: {"verdict":"VALIDÉE","verdict_color":"#00b894","quality_score":4,"quality_label":"Très bien","compliance_pct":92,"pace_analysis":"string","heart_rate_analysis":"string","positives":["string"],"improvements":["string"],"coach_comment":"string","recovery_advice":"string","next_session_adjustment":"string"}
+Verdicts possibles: VALIDÉE(#00b894), TROP RAPIDE(#e53e3e), TROP LENTE(#0066ff), INCOMPLÈTE(#d97706), DÉPASSÉE(#8b5cf6)`
 
+  // Utilise le modèle RAPIDE pour économiser les tokens
   const text = await groqRequest(
     [{ role: 'system', content: system }, { role: 'user', content: user }],
-    1500, true
+    800, true, true // fast=true → llama-3.1-8b-instant
   )
   return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
 }
 
+// ── Insight du jour (modèle rapide) ──
 export async function getTodayInsight(todaySession, recentActivities, weekProgress, goal) {
   if (!todaySession) return null
   try {
@@ -280,18 +263,19 @@ export async function getTodayInsight(todaySession, recentActivities, weekProgre
       const p = a.average_speed ? secToMMSS(Math.round(1000/a.average_speed)) + '/km' : 'N/A'
       return `${a.name}: ${(a.distance/1000).toFixed(1)}km @ ${p}`
     }).join(', ') || 'aucune activité récente'
-    const system = `Coach running. Insight court et motivant basé sur les données. JSON uniquement.`
+    const system = `Coach running. Insight court et motivant. JSON uniquement.`
     const user = `Séance: ${todaySession.title} (${todaySession.type}, ${todaySession.distance_km}km, ${todaySession.target_pace})
 Récent: ${recent} | Semaine: ${weekProgress.completed}/${weekProgress.total} | J-${goal ? Math.ceil((new Date(goal.race_date)-new Date())/86400000) : '?'}
-JSON: {"message":"max 130 chars motivant et actionnable","type":"normal|warning|positive"}`
+JSON: {"message":"max 130 chars motivant","type":"normal|warning|positive"}`
     const text = await groqRequest(
       [{ role: 'system', content: system }, { role: 'user', content: user }],
-      350, true
+      300, true, true // fast=true
     )
     return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
   } catch { return null }
 }
 
+// ── Insights dashboard (local, sans IA) ──
 export function generateInsights(stats, goals) {
   if (!stats) return []
   const profile = computeAthleteProfile(stats)
@@ -306,29 +290,30 @@ export function generateInsights(stats, goals) {
   if (stats.efPaceSecPerKm) insights.push({ type: 'info', icon: '💡', text: `Allure EF réelle Strava: ${secToMMSS(stats.efPaceSecPerKm)}/km. 80% de tes km doivent être à cette allure (zone 2).` })
   if (stats.avgHR && stats.maxHR) {
     const pct = Math.round((stats.avgHR / stats.maxHR) * 100)
-    if (pct > 78) insights.push({ type: 'warning', icon: '❤️', text: `FC moyenne ${stats.avgHR}bpm (${pct}% FCmax) trop élevée — tes séances sont trop intenses. Plus d'EF !` })
+    if (pct > 78) insights.push({ type: 'warning', icon: '❤️', text: `FC moyenne ${stats.avgHR}bpm (${pct}% FCmax) trop élevée — trop d'intensité. Intègre plus d'EF !` })
   }
   if (daysLeft && daysLeft < 21 && activeGoal) insights.push({ type: 'warning', icon: '🏁', text: `J-${daysLeft} avant ${activeGoal.name} — affûtage, réduis le volume et préserve ta fraîcheur.` })
   if (profile?.vmaKmh) insights.push({ type: 'info', icon: '⚡', text: `VMA estimée: ${profile.vmaKmh} km/h | VO2max: ~${profile.vo2max} ml/kg/min.` })
   return insights.slice(0, 3)
 }
 
+// ── Adaptation plan (modèle rapide) ──
 export async function adaptWeek(currentWeek, completedSessions, missedSessions, fatigue, goal, stravaStats) {
   const profile = computeAthleteProfile(stravaStats)
-  const system = `Coach running expert. Adapte le programme selon la réalité. Respecte 80/20 et jamais 2 séances qualité consécutives. JSON uniquement.`
+  const system = `Coach running expert. Adapte le programme. 80/20, jamais 2 séances qualité consécutives. JSON uniquement.`
   const user = `Semaine ${currentWeek?.week_number} (${currentWeek?.phase}):
 Faites: ${completedSessions.map(s=>s.title).join(', ')||'aucune'}
 Manquées: ${missedSessions.map(s=>s.title).join(', ')||'aucune'}
-Fatigue: ${fatigue}/5 | Analyses: ${completedSessions.filter(s=>s.analysis).map(s=>s.analysis?.verdict).join(', ')||'aucune'}
-Volume actuel: ${profile?.avgWeeklyKm || '?'} km/sem | Allure EF: ${profile?.paces?.ef ? secToMMSS(profile.paces.ef)+'/km' : '?'}
+Fatigue: ${fatigue}/5 | Volume: ${profile?.avgWeeklyKm || '?'} km/sem
 JSON: {"adaptation_needed":true,"reason":"string","adjustments":[{"session_title":"string","original_distance_km":10,"new_distance_km":8,"change_reason":"string"}],"coach_message":"string","weekly_volume_pct":-10}`
   const text = await groqRequest(
     [{ role: 'system', content: system }, { role: 'user', content: user }],
-    1500, true
+    1000, true, true // fast=true
   )
   return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
 }
 
+// ── Chat coach ──
 export async function chatWithCoach(messages, ctx) {
   const efStr = ctx.efPaceSec ? secToMMSS(ctx.efPaceSec) + '/km' : 'non définie'
   const system = `Tu es TrailForge Coach, coach running et trail expert certifié niveau 3.
@@ -337,7 +322,7 @@ Allure EF réelle: ${efStr}. FC max: ${ctx.maxHR||'?'}bpm. Ce mois: ${ctx.monthK
 Réponds en français. Direct, expert, motivant. Allures en MM:SS/km. Max 4 paragraphes.`
   const text = await groqRequest(
     [{ role: 'system', content: system }, ...messages.map(m => ({ role: m.role, content: m.content }))],
-    1400, false
+    1200, false, false
   )
   return text
 }
