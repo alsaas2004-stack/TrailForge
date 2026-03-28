@@ -118,32 +118,57 @@ export function computeStats(activities) {
     vo2max = Math.max(20, Math.min(90, vo2max))
   }
 
-  // Weekly trend 8 semaines avec VRAIES DATES
+  // Charge 7 derniers jours
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000)
+  const last7Runs = runs.filter(a => new Date(a.start_date) >= sevenDaysAgo)
+  const charge7d = {
+    km: Math.round(last7Runs.reduce((s, a) => s + a.distance, 0) / 100) / 10,
+    elevation: Math.round(last7Runs.reduce((s, a) => s + (a.total_elevation_gain || 0), 0)),
+    runs: last7Runs.length,
+    time: last7Runs.reduce((s, a) => s + a.moving_time, 0)
+  }
+
+  // Stats depuis debut annee
+  const startOfYear = new Date(now.getFullYear(), 0, 1)
+  const yearRuns = runs.filter(a => new Date(a.start_date) >= startOfYear)
+  const yearStats = {
+    km: Math.round(yearRuns.reduce((s, a) => s + a.distance, 0) / 100) / 10,
+    elevation: Math.round(yearRuns.reduce((s, a) => s + (a.total_elevation_gain || 0), 0)),
+    runs: yearRuns.length,
+    time: yearRuns.reduce((s, a) => s + a.moving_time, 0)
+  }
+
+  // Weekly trend 8 semaines avec dates claires
+  const MOIS_FR = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc']
   const weeklyTrend = []
   for (let i = 7; i >= 0; i--) {
     const weekStart = new Date(now.getTime() - (i + 1) * 7 * 86400000)
     const weekEnd = new Date(now.getTime() - i * 7 * 86400000)
     const wr = runs.filter(a => { const d = new Date(a.start_date); return d >= weekStart && d < weekEnd })
-    const label = `${String(weekStart.getDate()).padStart(2, '0')}/${String(weekStart.getMonth() + 1).padStart(2, '0')}`
+    const label = weekStart.getDate() + ' ' + MOIS_FR[weekStart.getMonth()]
+    const endLabel = weekEnd.getDate() + ' ' + MOIS_FR[weekEnd.getMonth()]
     weeklyTrend.push({
       week: label,
+      weekFull: label + ' - ' + endLabel,
       km: Math.round(wr.reduce((s, a) => s + a.distance, 0) / 100) / 10,
       elevation: Math.round(wr.reduce((s, a) => s + (a.total_elevation_gain || 0), 0)),
       runs: wr.length
     })
   }
 
-  // Régularité
+  // Regularite
   let currentStreak = 0
   for (let i = weeklyTrend.length - 1; i >= 0; i--) {
     if (weeklyTrend[i].runs > 0) currentStreak++
     else break
   }
+  const regularWeeks = weeklyTrend.filter(w => w.runs > 0).length
 
   return {
     totalDistance: totalDistance / 1000, totalTime, totalElevation, totalRuns,
-    avgWeeklyKm, monthStats, weeklyTrend,
-    bestPaceSecPerKm, efPaceSecPerKm, avgHR, maxHR, vo2max, currentStreak,
+    avgWeeklyKm, monthStats, yearStats, charge7d, weeklyTrend,
+    bestPaceSecPerKm, efPaceSecPerKm, avgHR, maxHR, vo2max,
+    currentStreak, regularWeeks,
     recentRuns: runs.slice(0, 15)
   }
 }
