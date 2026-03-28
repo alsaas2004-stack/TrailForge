@@ -2,7 +2,9 @@ import { useStrava } from '../hooks/useStrava'
 import { useGoals } from '../hooks/useGoals'
 import { getStravaAuthUrl, secToMMSS, fmtDuration } from '../lib/strava'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
-import { Activity, TrendingUp, Mountain, RefreshCw, Heart, Zap } from 'lucide-react'
+import { Activity, TrendingUp, Mountain, RefreshCw, Heart } from 'lucide-react'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 
 const formatDuration = fmtDuration
 const MOIS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
@@ -13,13 +15,13 @@ function getLocalInsights(stats, goal) {
   const trend = stats.weeklyTrend || []
   const lastKm = trend[trend.length - 1]?.km || 0
   const prevKm = trend[trend.length - 2]?.km || 0
-  if (lastKm > prevKm * 1.1) out.push({ type: 'positive', text: `Ton volume progresse bien cette semaine (+${(lastKm - prevKm).toFixed(1)}km vs la semaine précédente).` })
-  else if (lastKm < prevKm * 0.7 && prevKm > 0) out.push({ type: 'warning', text: `Volume en baisse cette semaine (${lastKm}km vs ${prevKm}km). Fatigue ou agenda chargé ?` })
-  if (stats.currentStreak >= 3) out.push({ type: 'positive', text: `${stats.currentStreak} semaines régulières consécutives — excellent, la constance fait tout !` })
-  if (stats.efPaceSecPerKm) out.push({ type: 'info', text: `Ton allure EF réelle Strava : ${secToMMSS(stats.efPaceSecPerKm)}/km. Reste dans cette fourchette sur tes footings faciles.` })
+  if (lastKm > prevKm * 1.1) out.push({ type: 'positive', icon: '📈', text: `Ton volume progresse bien cette semaine (+${(lastKm - prevKm).toFixed(1)}km vs la semaine précédente).` })
+  else if (lastKm < prevKm * 0.7 && prevKm > 0) out.push({ type: 'warning', icon: '⚠️', text: `Volume en baisse cette semaine (${lastKm}km vs ${prevKm}km). Fatigue ou agenda chargé ?` })
+  if (stats.currentStreak >= 3) out.push({ type: 'positive', icon: '🔥', text: `${stats.currentStreak} semaines régulières consécutives — excellent, la constance fait tout !` })
+  if (stats.efPaceSecPerKm) out.push({ type: 'info', icon: '💡', text: `Ton allure EF réelle Strava : ${secToMMSS(stats.efPaceSecPerKm)}/km. Reste dans cette fourchette sur tes footings faciles.` })
   if (goal) {
     const daysLeft = Math.ceil((new Date(goal.race_date) - new Date()) / 86400000)
-    if (daysLeft < 21) out.push({ type: 'warning', text: `J-${daysLeft} avant ${goal.name} — phase d'affûtage, réduis le volume progressivement.` })
+    if (daysLeft < 21) out.push({ type: 'warning', icon: '🏁', text: `J-${daysLeft} avant ${goal.name} — phase d'affûtage, réduis le volume progressivement.` })
   }
   return out.slice(0, 3)
 }
@@ -56,8 +58,6 @@ export default function Dashboard() {
   const { goals } = useGoals()
   const activeGoal = goals.find(g => new Date(g.race_date) >= new Date())
   const monthLabel = MOIS[new Date().getMonth()]
-
-  // Génère les insights localement sans appel IA
   const insights = getLocalInsights(stats, activeGoal)
 
   if (!connected) return (
@@ -90,15 +90,13 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ── 3 cartes charge ── */}
       <div className="section-header"><span className="section-title">📅 7 derniers jours</span></div>
       <div className="grid-3" style={{ marginBottom:24 }}>
         <KpiCard icon={TrendingUp} label="Volume 7j" value={stats?.charge7d?.km} unit="km" color="var(--accent)" sub={`Moy. hebdo: ${Math.round(stats?.avgWeeklyKm||0)} km/sem`}/>
-        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="var(--long)" sub={`Total: ${(stats?.totalElevation/1000||0).toFixed(0)} km D+`}/>
-        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="var(--frac)" sub={`Total: ${stats?.totalRuns||0} sorties`}/>
+        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="#2563eb" sub={`Total: ${(stats?.totalElevation/1000||0).toFixed(0)} km D+`}/>
+        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="#ea580c" sub={`Total: ${stats?.totalRuns||0} sorties`}/>
       </div>
 
-      {/* ── Graphique principal ── */}
       {stats?.weeklyTrend?.length>0 && (
         <div className="card" style={{ marginBottom:20 }}>
           <div className="section-header" style={{ marginBottom:14 }}>
@@ -123,24 +121,22 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Stats ce mois ── */}
       <div className="section-header"><span className="section-title">📆 {monthLabel} — ce mois</span></div>
       <div className="grid-4" style={{ marginBottom:24 }}>
         <KpiCard icon={Activity} label="Sorties" value={stats?.monthStats?.runs} unit="runs" color="var(--accent)"/>
-        <KpiCard icon={TrendingUp} label="Distance" value={stats?.monthStats?.km} unit="km" color="var(--long)"/>
-        <KpiCard icon={Mountain} label="Dénivelé" value={stats?.monthStats?.elevation} unit="m D+" color="var(--ef)"/>
+        <KpiCard icon={TrendingUp} label="Distance" value={stats?.monthStats?.km} unit="km" color="#2563eb"/>
+        <KpiCard icon={Mountain} label="Dénivelé" value={stats?.monthStats?.elevation} unit="m D+" color="#16a34a"/>
         <KpiCard icon={Heart} label="Temps" value={formatDuration(stats?.monthStats?.time)} unit="" color="#e53e3e"/>
       </div>
 
-      {/* ── Progression & Records ── */}
       <div className="grid-2" style={{ marginBottom:24 }}>
         <div className="card">
           <div className="section-header" style={{ marginBottom:14 }}><span className="section-title">Progression</span></div>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             {[
-              { label:'Allure EF réelle', value:stats?.efPaceFormatted||'--', unit:'/km', color:'var(--ef)', desc:'Allure confortable habituelle' },
-              { label:'Meilleure allure', value:stats?.bestPaceFormatted||'--', unit:'/km', color:'var(--frac)', desc:'Sur tes 30 dernières sorties' },
-              { label:'VO2max estimé', value:stats?.vo2max?`~${stats.vo2max}`:'--', unit:'', color:'var(--long)', desc:'Estimation Jack Daniels' },
+              { label:'Allure EF réelle', value:stats?.efPaceSecPerKm ? secToMMSS(stats.efPaceSecPerKm) : '--', unit:'/km', color:'#16a34a', desc:'Allure confortable habituelle' },
+              { label:'Meilleure allure', value:stats?.bestPaceSecPerKm ? secToMMSS(stats.bestPaceSecPerKm) : '--', unit:'/km', color:'#ea580c', desc:'Sur tes 30 dernières sorties' },
+              { label:'VO2max estimé', value:stats?.vo2max?`~${stats.vo2max}`:'--', unit:'', color:'#2563eb', desc:'Estimation Jack Daniels' },
               { label:'FC moyenne', value:stats?.avgHR||'--', unit:'bpm', color:'#e53e3e', desc:stats?.maxHR?`FC max: ${stats.maxHR}bpm`:'' },
             ].map((item,i) => (
               <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', background:'var(--bg3)', borderRadius:10 }}>
@@ -159,25 +155,16 @@ export default function Dashboard() {
         <div className="card">
           <div className="section-header" style={{ marginBottom:14 }}><span className="section-title">Régularité</span></div>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <div style={{ padding:'14px 16px', background:'var(--ef-light)', borderRadius:12, border:'1px solid #bbf7d0' }}>
-              <p style={{ fontSize:24, fontWeight:800, color:'var(--ef)' }}>{stats?.streakWeeks||0} sem.</p>
+            <div style={{ padding:'14px 16px', background:'#f0fdf4', borderRadius:12, border:'1px solid #bbf7d0' }}>
+              <p style={{ fontSize:24, fontWeight:800, color:'#16a34a' }}>{stats?.currentStreak||0} sem.</p>
               <p style={{ fontSize:13, color:'var(--text2)', marginTop:2 }}>Série consécutive avec au moins 1 sortie</p>
-            </div>
-            <div style={{ padding:'12px 14px', background:'var(--bg3)', borderRadius:12 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-                <span style={{ fontSize:13, color:'var(--text2)' }}>Semaines actives (8 sem)</span>
-                <span style={{ fontSize:14, fontWeight:800, color:'var(--text)' }}>{stats?.regularWeeks||0}/8</span>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width:`${((stats?.regularWeeks||0)/8)*100}%`, background:(stats?.regularWeeks||0)>=6?'var(--ef)':'var(--accent)' }}/>
-              </div>
             </div>
             {stats?.weeklyTrend && (
               <div style={{ padding:'12px 14px', background:'var(--bg3)', borderRadius:12 }}>
                 <p style={{ fontSize:12, color:'var(--text2)', marginBottom:8 }}>Tendance dénivelé 8 sem.</p>
                 <ResponsiveContainer width="100%" height={60}>
                   <BarChart data={stats.weeklyTrend}>
-                    <Bar dataKey="elevation" name="D+" fill="var(--long)" radius={[3,3,0,0]}/>
+                    <Bar dataKey="elevation" name="D+" fill="#2563eb" radius={[3,3,0,0]}/>
                     <Tooltip content={<ChartTip/>}/>
                   </BarChart>
                 </ResponsiveContainer>
@@ -187,11 +174,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Insights IA ── */}
       <div className="section-header"><span className="section-title">💡 À retenir cette semaine</span></div>
-      {loadingInsights ? (
-        <div className="skeleton" style={{ height:80, marginBottom:8 }}/>
-      ) : insights?.length > 0 ? (
+      {insights?.length > 0 ? (
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:24 }}>
           {insights.map((ins,i) => (
             <div key={i} style={{ padding:'12px 16px', borderRadius:12, background:'var(--bg2)', border:'1px solid var(--border)', display:'flex', gap:12, alignItems:'flex-start' }}>
@@ -200,18 +184,17 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
-      ) : stats && (
+      ) : (
         <div style={{ padding:'14px 16px', borderRadius:12, background:'var(--bg3)', marginBottom:24 }}>
           <p style={{ fontSize:13, color:'var(--text2)' }}>Continue à t'entraîner pour voir tes insights personnalisés 💪</p>
         </div>
       )}
 
-      {/* ── Dernières sorties ── */}
       <div className="section-header"><span className="section-title">Dernières sorties</span></div>
       <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
         {(stats?.recentRuns||[]).slice(0,8).map(run => {
           const paceSec = run.average_speed>0 ? 1000/run.average_speed : null
-          const paceStr = paceSec ? `${Math.floor(paceSec/60)}'${String(Math.round(paceSec%60)).padStart(2,'0')}"` : '--'
+          const paceStr = paceSec ? secToMMSS(paceSec) : '--'
           const isTrail = run.type==='TrailRun'||run.sport_type==='TrailRun'
           return (
             <div key={run.id} className="card" style={{ padding:'12px 16px' }}>
@@ -220,14 +203,14 @@ export default function Dashboard() {
                   <p style={{ fontWeight:600, fontSize:13, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{run.name}</p>
                   <p style={{ fontSize:11, color:'var(--text3)', marginTop:2 }}>{format(new Date(run.start_date),'dd MMM yyyy',{locale:fr})}</p>
                 </div>
-                <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:isTrail?'var(--cotes-light)':'var(--ef-light)', color:isTrail?'var(--cotes)':'var(--ef)', flexShrink:0, marginLeft:8 }}>
+                <span style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:6, background:isTrail?'#fffbeb':'#f0fdf4', color:isTrail?'#d97706':'#16a34a', flexShrink:0, marginLeft:8 }}>
                   {isTrail?'TRAIL':'ROUTE'}
                 </span>
               </div>
               <div style={{ display:'flex', gap:14, marginTop:8, flexWrap:'wrap' }}>
                 <span style={{ fontSize:12, fontWeight:700 }}>{(run.distance/1000).toFixed(1)} km</span>
                 <span style={{ fontSize:12, color:'var(--text2)' }}>{formatDuration(run.moving_time)}</span>
-                <span style={{ fontSize:12, color:'var(--long)', fontWeight:600 }}>{paceStr}/km</span>
+                <span style={{ fontSize:12, color:'#2563eb', fontWeight:600 }}>{paceStr}/km</span>
                 {run.total_elevation_gain>0 && <span style={{ fontSize:12, color:'var(--text2)' }}>↑{Math.round(run.total_elevation_gain)}m</span>}
                 {run.average_heartrate>0 && <span style={{ fontSize:12, color:'#e53e3e' }}>♥ {Math.round(run.average_heartrate)}</span>}
               </div>
