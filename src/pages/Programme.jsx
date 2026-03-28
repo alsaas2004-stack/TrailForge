@@ -395,7 +395,7 @@ export default function Programme() {
                 {week.coach_tip && <p style={{ fontSize:12, color:'var(--text2)', marginTop:10, padding:'7px 10px', background:'var(--bg2)', borderRadius:8, border:'1px solid var(--border)' }}>💬 {safeStr(week.coach_tip)}</p>}
               </div>
 
-              <div style={{ padding:'16px 20px', display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:8 }}>
+              <div className="week-grid" style={{ padding:'16px 20px' }}>
                 {DAYS.map((dayLabel, dayIdx) => {
                   const daySessions = (week.sessions||[]).filter(s => s.day_of_week===dayIdx && s.type!=='Repos')
                   const isToday = isCurrentWeek && dayIdx===todayDow
