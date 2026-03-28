@@ -47,7 +47,7 @@ const ChartTip = ({ active, payload, label }) => {
   if (!active||!payload?.length) return null
   return (
     <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:10, padding:'8px 12px', fontSize:12, boxShadow:'var(--shadow)' }}>
-      <p style={{ color:'var(--text2)', marginBottom:4, fontWeight:600 }}>{label}</p>
+      <p style={{ color:'var(--text2)', marginBottom:4, fontWeight:600 }}>{payload?.[0]?.payload?.weekFull || label}</p>
       {payload.map((p,i) => <p key={i} style={{ color:p.color, fontWeight:700 }}>{p.name}: {typeof p.value==='number'?p.value.toFixed(1):p.value}</p>)}
     </div>
   )
@@ -92,9 +92,9 @@ export default function Dashboard() {
 
       <div className="section-header"><span className="section-title">📅 7 derniers jours</span></div>
       <div className="grid-3" style={{ marginBottom:24 }}>
-        <KpiCard icon={TrendingUp} label="Volume 7j" value={stats?.charge7d?.km} unit="km" color="var(--accent)" sub={`Depuis jan: ${stats?.yearStats?.km||0} km`}/>
-        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="#2563eb" sub={`Depuis jan: ${stats?.yearStats?.elevation||0} m D+`}/>
-        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="#ea580c" sub={`Depuis jan: ${stats?.yearStats?.runs||0} sorties`}/>
+        <KpiCard icon={TrendingUp} label="Volume 7j" value={stats?.charge7d?.km} unit="km" color="var(--accent)" sub={`Cette année: ${stats?.yearStats?.km||0} km`}/>
+        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="#2563eb" sub={`Cette année: ${stats?.yearStats?.elevation||0} m D+`}/>
+        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="#ea580c" sub={`Cette année: ${stats?.yearStats?.runs||0} sorties`}/>
       </div>
 
       {stats?.weeklyTrend?.length>0 && (
@@ -112,7 +112,7 @@ export default function Dashboard() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
-              <XAxis dataKey="week" tick={{ fill:'var(--text3)', fontSize:10 }}/>
+              <XAxis dataKey="week" tick={{ fill:'var(--text3)', fontSize:10 }} tickFormatter={(v) => v.split(' ')[1] || v}/>
               <YAxis tick={{ fill:'var(--text3)', fontSize:10 }}/>
               <Tooltip content={<ChartTip/>}/>
               <Area type="monotone" dataKey="km" name="km" stroke="var(--accent)" strokeWidth={2.5} fill="url(#kmGrad)" dot={{ fill:'var(--accent)', r:3, strokeWidth:0 }}/>
