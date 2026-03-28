@@ -2,7 +2,7 @@ import { useStrava } from '../hooks/useStrava'
 import { useGoals } from '../hooks/useGoals'
 import { getStravaAuthUrl, secToMMSS, fmtDuration } from '../lib/strava'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
-import { Activity, TrendingUp, Mountain, RefreshCw, Heart } from 'lucide-react'
+import { Activity, TrendingUp, Mountain, RefreshCw, Clock } from 'lucide-react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
@@ -47,7 +47,7 @@ const ChartTip = ({ active, payload, label }) => {
   if (!active||!payload?.length) return null
   return (
     <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:10, padding:'8px 12px', fontSize:12, boxShadow:'var(--shadow)' }}>
-      <p style={{ color:'var(--text2)', marginBottom:4, fontWeight:600 }}>Sem. {label}</p>
+      <p style={{ color:'var(--text2)', marginBottom:4, fontWeight:600 }}>{label}</p>
       {payload.map((p,i) => <p key={i} style={{ color:p.color, fontWeight:700 }}>{p.name}: {typeof p.value==='number'?p.value.toFixed(1):p.value}</p>)}
     </div>
   )
@@ -92,9 +92,9 @@ export default function Dashboard() {
 
       <div className="section-header"><span className="section-title">📅 7 derniers jours</span></div>
       <div className="grid-3" style={{ marginBottom:24 }}>
-        <KpiCard icon={TrendingUp} label="Volume 7j" value={stats?.charge7d?.km} unit="km" color="var(--accent)" sub={`Moy. hebdo: ${Math.round(stats?.avgWeeklyKm||0)} km/sem`}/>
-        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="#2563eb" sub={`Total: ${(stats?.totalElevation/1000||0).toFixed(0)} km D+`}/>
-        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="#ea580c" sub={`Total: ${stats?.totalRuns||0} sorties`}/>
+        <KpiCard icon={TrendingUp} label="Volume 7j" value={stats?.charge7d?.km} unit="km" color="var(--accent)" sub={`Depuis jan: ${stats?.yearStats?.km||0} km`}/>
+        <KpiCard icon={Mountain} label="Dénivelé 7j" value={stats?.charge7d?.elevation} unit="m D+" color="#2563eb" sub={`Depuis jan: ${stats?.yearStats?.elevation||0} m D+`}/>
+        <KpiCard icon={Activity} label="Sorties 7j" value={stats?.charge7d?.runs} unit="runs" color="#ea580c" sub={`Depuis jan: ${stats?.yearStats?.runs||0} sorties`}/>
       </div>
 
       {stats?.weeklyTrend?.length>0 && (
@@ -126,7 +126,7 @@ export default function Dashboard() {
         <KpiCard icon={Activity} label="Sorties" value={stats?.monthStats?.runs} unit="runs" color="var(--accent)"/>
         <KpiCard icon={TrendingUp} label="Distance" value={stats?.monthStats?.km} unit="km" color="#2563eb"/>
         <KpiCard icon={Mountain} label="Dénivelé" value={stats?.monthStats?.elevation} unit="m D+" color="#16a34a"/>
-        <KpiCard icon={Heart} label="Temps" value={formatDuration(stats?.monthStats?.time)} unit="" color="#e53e3e"/>
+        <KpiCard icon={Clock} label="Temps" value={formatDuration(stats?.monthStats?.time)} unit="" color="#d97706"/>
       </div>
 
       <div className="grid-2" style={{ marginBottom:24 }}>
