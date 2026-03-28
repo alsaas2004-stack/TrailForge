@@ -1,4 +1,5 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { Sun, Calendar, BarChart2, User, Zap } from 'lucide-react'
 
 const nav = [
@@ -9,6 +10,14 @@ const nav = [
 ]
 
 export default function Layout() {
+  const location = useLocation()
+
+  // Scroll en haut à chaque changement de page
+  useEffect(() => {
+    window.scrollTo(0, 0)
+    document.querySelector('.main-content')?.scrollTo(0, 0)
+  }, [location.pathname])
+
   return (
     <div className="app-layout">
       <aside className="sidebar">
