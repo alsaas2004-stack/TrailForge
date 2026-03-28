@@ -1,6 +1,6 @@
 {
-  "rewrites": [
-    { "source": "/strava-callback", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "/strava-callback", "dest": "/index.html" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
