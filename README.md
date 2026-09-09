@@ -41,8 +41,3 @@ Quatre tables, toutes protégées par des policies RLS (`auth.uid() = user_id`) 
 
 Le reste du développement (composants React, mise en forme, prompts IA) a été réalisé avec l'assistance d'un outil d'IA générative (Claude).
 
-## Nettoyage effectué
-
-- Suppression du dossier `trailforge/` (ancienne copie du projet, jamais mise à jour) et des dossiers `node_modules/`, `dist/` qui avaient été commités par erreur — purgés de tout l'historique Git
-- Ajout d'un `.gitignore` (absent jusqu'ici)
-- Clés d'API précédemment exposées dans `.env` committé : révoquées et régénérées
